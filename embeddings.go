@@ -203,7 +203,7 @@ func (c *Client) CreateEmbeddings(ctx context.Context, conv EmbeddingRequestConv
 		return
 	}
 
-	err = c.sendRequest(req, &res)
+	err = c.sendRequest(ctx, req, &res)
 
 	return
 }

@@ -83,6 +83,6 @@ func (c *Client) Moderations(ctx context.Context, request ModerationRequest) (re
 		return
 	}
 
-	err = c.sendRequest(req, &response)
+	err = c.sendRequest(ctx, req, &response)
 	return
 }

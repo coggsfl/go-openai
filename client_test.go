@@ -305,7 +305,8 @@ func TestRequestImageErrors(t *testing.T) {
 		Body:       ioutil.NopCloser(bytes.NewBufferString("")),
 	}
 	v := &ImageRequest{}
-	err = client.requestImage(res, v)
+	ctx := context.Background()
+	err = client.requestImage(ctx, res, v)
 
 	if !errors.Is(err, ErrClientEmptyCallbackURL) {
 		t.Fatalf("%s did not return error. requestImage failed: %v", testCase, err)
@@ -318,7 +319,7 @@ func TestRequestImageErrors(t *testing.T) {
 		Header:     http.Header{"Operation-Location": []string{"hxxp://localhost:8080/openai/operations/images/request-id"}},
 		Body:       ioutil.NopCloser(bytes.NewBufferString("")),
 	}
-	err = client.requestImage(res, v)
+	err = client.requestImage(ctx, res, v)
 	if err == nil {
 		t.Fatalf("%s did not return error. requestImage failed: %v", testCase, err)
 	}
@@ -360,7 +361,7 @@ func TestImageRequestCallbackErrors(t *testing.T) {
 		Body:       ioutil.NopCloser(bytes.NewBufferString(cbResponseBytes.String())),
 	}
 	v := &ImageRequest{}
-	err = client.imageRequestCallback(req, v, res)
+	err = client.imageRequestCallback(ctx, req, v, res)
 
 	if !errors.Is(err, ErrClientRetievingCallbackResponse) {
 		t.Fatalf("%s did not return error. imageRequestCallback failed: %v", testCase, err)
