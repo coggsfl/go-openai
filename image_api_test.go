@@ -32,7 +32,6 @@ func TestAzureImages(t *testing.T) {
 	defer teardown()
 	server.RegisterHandler("/openai/images/generations:submit", handleImageEndpoint)
 	server.RegisterHandler("/openai/operations/images/request-id", handleImageCallbackEndpoint)
-
 	_, err := client.CreateImage(context.Background(), ImageRequest{
 		Prompt:         "Lorem ipsum",
 		ResponseFormat: CreateImageResponseFormatURL,

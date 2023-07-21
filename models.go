@@ -41,12 +41,12 @@ type ModelsList struct {
 // ListModels Lists the currently available models,
 // and provides basic information about each model such as the model id and parent.
 func (c *Client) ListModels(ctx context.Context) (models ModelsList, err error) {
-	req, err := c.requestBuilder.Build(ctx, http.MethodGet, c.fullURL("/models"), nil)
+	req, err := c.newRequest(ctx, http.MethodGet, c.fullURL("/models"))
 	if err != nil {
 		return
 	}
 
-	err = c.sendRequest(req, &models)
+	err = c.sendRequest(ctx, req, &models)
 	return
 }
 
@@ -54,11 +54,11 @@ func (c *Client) ListModels(ctx context.Context) (models ModelsList, err error) 
 // the model such as the owner and permissioning.
 func (c *Client) GetModel(ctx context.Context, modelID string) (model Model, err error) {
 	urlSuffix := fmt.Sprintf("/models/%s", modelID)
-	req, err := c.requestBuilder.Build(ctx, http.MethodGet, c.fullURL(urlSuffix), nil)
+	req, err := c.newRequest(ctx, http.MethodGet, c.fullURL(urlSuffix))
 	if err != nil {
 		return
 	}
 
-	err = c.sendRequest(req, &model)
+	err = c.sendRequest(ctx, req, &model)
 	return
 }

@@ -21,7 +21,7 @@ var errTestRequestBuilderFailed = errors.New("test request builder failed")
 
 type failingRequestBuilder struct{}
 
-func (*failingRequestBuilder) Build(_ context.Context, _, _ string, _ any) (*http.Request, error) {
+func (*failingRequestBuilder) Build(_ context.Context, _, _ string, _ any, _ http.Header) (*http.Request, error) {
 	return nil, errTestRequestBuilderFailed
 }
 
@@ -46,9 +46,10 @@ func TestDecodeResponse(t *testing.T) {
 	stringInput := ""
 
 	testCases := []struct {
-		name  string
-		value interface{}
-		body  io.Reader
+		name     string
+		value    interface{}
+		body     io.Reader
+		hasError bool
 	}{
 		{
 			name:  "nil input",
@@ -65,16 +66,30 @@ func TestDecodeResponse(t *testing.T) {
 			value: &map[string]interface{}{},
 			body:  bytes.NewReader([]byte(`{"test": "test"}`)),
 		},
+		{
+			name:     "reader return error",
+			value:    &stringInput,
+			body:     &errorReader{err: errors.New("dummy")},
+			hasError: true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := decodeResponse(tc.body, tc.value)
-			if err != nil {
+			if (err != nil) != tc.hasError {
 				t.Errorf("Unexpected error: %v", err)
 			}
 		})
 	}
+}
+
+type errorReader struct {
+	err error
+}
+
+func (e *errorReader) Read(_ []byte) (n int, err error) {
+	return 0, e.err
 }
 
 func TestHandleErrorResp(t *testing.T) {
@@ -290,7 +305,8 @@ func TestRequestImageErrors(t *testing.T) {
 		Body:       ioutil.NopCloser(bytes.NewBufferString("")),
 	}
 	v := &ImageRequest{}
-	err = client.requestImage(res, v)
+	ctx := context.Background()
+	err = client.requestImage(ctx, res, v)
 
 	if !errors.Is(err, ErrClientEmptyCallbackURL) {
 		t.Fatalf("%s did not return error. requestImage failed: %v", testCase, err)
@@ -303,7 +319,7 @@ func TestRequestImageErrors(t *testing.T) {
 		Header:     http.Header{"Operation-Location": []string{"hxxp://localhost:8080/openai/operations/images/request-id"}},
 		Body:       ioutil.NopCloser(bytes.NewBufferString("")),
 	}
-	err = client.requestImage(res, v)
+	err = client.requestImage(ctx, res, v)
 	if err == nil {
 		t.Fatalf("%s did not return error. requestImage failed: %v", testCase, err)
 	}
@@ -321,7 +337,7 @@ func TestImageRequestCallbackErrors(t *testing.T) {
 	testCase := "imageRequestCallback status response empty"
 	var request ImageRequest
 	ctx := context.Background()
-	req, err := client.requestBuilder.Build(ctx, http.MethodPost, client.fullURL("openai/operations/images"), request)
+	req, err := client.requestBuilder.Build(ctx, http.MethodPost, client.fullURL("openai/operations/images"), request, http.Header{})
 	if err != nil {
 		t.Fatalf("%s. requestBuilder failed with unexpected error: %v", testCase, err)
 	}
@@ -345,7 +361,7 @@ func TestImageRequestCallbackErrors(t *testing.T) {
 		Body:       ioutil.NopCloser(bytes.NewBufferString(cbResponseBytes.String())),
 	}
 	v := &ImageRequest{}
-	err = client.imageRequestCallback(req, v, res)
+	err = client.imageRequestCallback(ctx, req, v, res)
 
 	if !errors.Is(err, ErrClientRetievingCallbackResponse) {
 		t.Fatalf("%s did not return error. imageRequestCallback failed: %v", testCase, err)

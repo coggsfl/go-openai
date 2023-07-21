@@ -22,12 +22,12 @@ type EnginesList struct {
 // ListEngines Lists the currently available engines, and provides basic
 // information about each option such as the owner and availability.
 func (c *Client) ListEngines(ctx context.Context) (engines EnginesList, err error) {
-	req, err := c.requestBuilder.Build(ctx, http.MethodGet, c.fullURL("/engines"), nil)
+	req, err := c.newRequest(ctx, http.MethodGet, c.fullURL("/engines"))
 	if err != nil {
 		return
 	}
 
-	err = c.sendRequest(req, &engines)
+	err = c.sendRequest(ctx, req, &engines)
 	return
 }
 
@@ -38,11 +38,11 @@ func (c *Client) GetEngine(
 	engineID string,
 ) (engine Engine, err error) {
 	urlSuffix := fmt.Sprintf("/engines/%s", engineID)
-	req, err := c.requestBuilder.Build(ctx, http.MethodGet, c.fullURL(urlSuffix), nil)
+	req, err := c.newRequest(ctx, http.MethodGet, c.fullURL(urlSuffix))
 	if err != nil {
 		return
 	}
 
-	err = c.sendRequest(req, &engine)
+	err = c.sendRequest(ctx, req, &engine)
 	return
 }

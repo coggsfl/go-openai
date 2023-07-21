@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -69,7 +70,43 @@ func NewOrgClient(authToken, org string) *Client {
 	return NewClientWithConfig(config)
 }
 
-func (c *Client) sendRequest(req *http.Request, v any) error {
+type requestOptions struct {
+	body   any
+	header http.Header
+}
+
+type requestOption func(*requestOptions)
+
+func withBody(body any) requestOption {
+	return func(args *requestOptions) {
+		args.body = body
+	}
+}
+
+func withContentType(contentType string) requestOption {
+	return func(args *requestOptions) {
+		args.header.Set("Content-Type", contentType)
+	}
+}
+
+func (c *Client) newRequest(ctx context.Context, method, url string, setters ...requestOption) (*http.Request, error) {
+	// Default Options
+	args := &requestOptions{
+		body:   nil,
+		header: make(http.Header),
+	}
+	for _, setter := range setters {
+		setter(args)
+	}
+	req, err := c.requestBuilder.Build(ctx, method, url, args.body, args.header)
+	if err != nil {
+		return nil, err
+	}
+	c.setCommonHeaders(req)
+	return req, nil
+}
+
+func (c *Client) sendRequest(ctx context.Context, req *http.Request, v any) error {
 	req.Header.Set("Accept", "application/json; charset=utf-8")
 
 	// Check whether Content-Type is already set, Upload Files API requires
@@ -78,8 +115,6 @@ func (c *Client) sendRequest(req *http.Request, v any) error {
 	if contentType == "" {
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	}
-
-	c.setCommonHeaders(req)
 
 	res, err := c.config.HTTPClient.Do(req)
 	if err != nil {
@@ -95,15 +130,50 @@ func (c *Client) sendRequest(req *http.Request, v any) error {
 	if c.config.APIType == APITypeAzure || c.config.APIType == APITypeAzureAD {
 		// Special handling for initial call to Azure DALL-E API.
 		if strings.Contains(req.URL.Path, "openai/images/generations") {
-			return c.requestImage(res, v)
+			return c.requestImage(ctx, res, v)
 		}
 		// Special handling for callBack to Azure DALL-E API.
 		if strings.Contains(req.URL.Path, "openai/operations/images") {
-			return c.imageRequestCallback(req, v, res)
+			return c.imageRequestCallback(ctx, req, v, res)
 		}
 	}
 
 	return decodeResponse(res.Body, v)
+}
+
+func (c *Client) sendRequestRaw(req *http.Request) (body io.ReadCloser, err error) {
+	resp, err := c.config.HTTPClient.Do(req)
+	if err != nil {
+		return
+	}
+
+	if isFailureStatusCode(resp) {
+		err = c.handleErrorResp(resp)
+		return
+	}
+	return resp.Body, nil
+}
+
+func sendRequestStream[T streamable](client *Client, req *http.Request) (*streamReader[T], error) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Connection", "keep-alive")
+
+	resp, err := client.config.HTTPClient.Do(req) //nolint:bodyclose // body is closed in stream.Close()
+	if err != nil {
+		return new(streamReader[T]), err
+	}
+	if isFailureStatusCode(resp) {
+		return new(streamReader[T]), client.handleErrorResp(resp)
+	}
+	return &streamReader[T]{
+		emptyMessagesLimit: client.config.EmptyMessagesLimit,
+		reader:             bufio.NewReader(resp.Body),
+		response:           resp,
+		errAccumulator:     utils.NewErrorAccumulator(),
+		unmarshaler:        &utils.JSONUnmarshaler{},
+	}, nil
 }
 
 func (c *Client) setCommonHeaders(req *http.Request) {
@@ -124,7 +194,7 @@ func isFailureStatusCode(resp *http.Response) bool {
 	return resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest
 }
 
-func (c *Client) requestImage(res *http.Response, v any) error {
+func (c *Client) requestImage(ctx context.Context, res *http.Response, v any) error {
 	_, err := io.Copy(ioutil.Discard, res.Body)
 	if err != nil {
 		return err
@@ -133,15 +203,16 @@ func (c *Client) requestImage(res *http.Response, v any) error {
 	if callBackURL == "" {
 		return ErrClientEmptyCallbackURL
 	}
-	newReq, err := http.NewRequest("GET", callBackURL, nil)
+	newReq, err := c.newRequest(ctx, http.MethodGet, callBackURL)
 	if err != nil {
 		return err
 	}
-	return c.sendRequest(newReq, v)
+
+	return c.sendRequest(ctx, newReq, v)
 }
 
 // Handle image callback response from Azure DALL-E API.
-func (c *Client) imageRequestCallback(req *http.Request, v any, res *http.Response) error {
+func (c *Client) imageRequestCallback(ctx context.Context, req *http.Request, v any, res *http.Response) error {
 	// Retry Sleep seconds for Azure DALL-E 2 callback URL.
 	var callBackWaitTime = 3
 
@@ -157,7 +228,7 @@ func (c *Client) imageRequestCallback(req *http.Request, v any, res *http.Respon
 	if result.Status != "succeeded" {
 		time.Sleep(time.Duration(callBackWaitTime) * time.Second)
 		req.Header.Add("Retry", "true")
-		return c.sendRequest(req, v)
+		return c.sendRequest(ctx, req, v)
 	}
 
 	// Convert the callBack response to the OpenAI ImageResponse
@@ -223,26 +294,6 @@ func (c *Client) fullURL(suffix string, args ...any) string {
 
 	// c.config.APIType == APITypeOpenAI || c.config.APIType == ""
 	return fmt.Sprintf("%s%s", c.config.BaseURL, suffix)
-}
-
-func (c *Client) newStreamRequest(
-	ctx context.Context,
-	method string,
-	urlSuffix string,
-	body any,
-	model string) (*http.Request, error) {
-	req, err := c.requestBuilder.Build(ctx, method, c.fullURL(urlSuffix, model), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("Connection", "keep-alive")
-
-	c.setCommonHeaders(req)
-	return req, nil
 }
 
 func (c *Client) handleErrorResp(resp *http.Response) error {

@@ -95,16 +95,16 @@ func (c *Client) callAudioAPI(
 	}
 
 	urlSuffix := fmt.Sprintf("/audio/%s", endpointSuffix)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.fullURL(urlSuffix, request.Model), &formBody)
+	req, err := c.newRequest(ctx, http.MethodPost, c.fullURL(urlSuffix, request.Model),
+		withBody(&formBody), withContentType(builder.FormDataContentType()))
 	if err != nil {
 		return AudioResponse{}, err
 	}
-	req.Header.Add("Content-Type", builder.FormDataContentType())
 
 	if request.HasJSONResponse() {
-		err = c.sendRequest(req, &response)
+		err = c.sendRequest(ctx, req, &response)
 	} else {
-		err = c.sendRequest(req, &response.Text)
+		err = c.sendRequest(ctx, req, &response.Text)
 	}
 	if err != nil {
 		return AudioResponse{}, err
