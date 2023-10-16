@@ -17,18 +17,23 @@ type FileRequest struct {
 
 // File struct represents an OpenAPI file.
 type File struct {
-	Bytes     int    `json:"bytes"`
-	CreatedAt int64  `json:"created_at"`
-	ID        string `json:"id"`
-	FileName  string `json:"filename"`
-	Object    string `json:"object"`
-	Owner     string `json:"owner"`
-	Purpose   string `json:"purpose"`
+	Bytes         int    `json:"bytes"`
+	CreatedAt     int64  `json:"created_at"`
+	ID            string `json:"id"`
+	FileName      string `json:"filename"`
+	Object        string `json:"object"`
+	Status        string `json:"status"`
+	Purpose       string `json:"purpose"`
+	StatusDetails string `json:"status_details"`
+
+	httpHeader
 }
 
 // FilesList is a list of files that belong to the user or organization.
 type FilesList struct {
 	Files []File `json:"data"`
+
+	httpHeader
 }
 
 // CreateFile uploads a jsonl file to GPT3
@@ -63,7 +68,7 @@ func (c *Client) CreateFile(ctx context.Context, request FileRequest) (file File
 		return
 	}
 
-	err = c.sendRequest(ctx, req, &file)
+	err = c.sendRequest(req, &file)
 	return
 }
 
@@ -74,7 +79,7 @@ func (c *Client) DeleteFile(ctx context.Context, fileID string) (err error) {
 		return
 	}
 
-	err = c.sendRequest(ctx, req, nil)
+	err = c.sendRequest(req, nil)
 	return
 }
 
@@ -86,7 +91,7 @@ func (c *Client) ListFiles(ctx context.Context) (files FilesList, err error) {
 		return
 	}
 
-	err = c.sendRequest(ctx, req, &files)
+	err = c.sendRequest(req, &files)
 	return
 }
 
@@ -99,7 +104,7 @@ func (c *Client) GetFile(ctx context.Context, fileID string) (file File, err err
 		return
 	}
 
-	err = c.sendRequest(ctx, req, &file)
+	err = c.sendRequest(req, &file)
 	return
 }
 

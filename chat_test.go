@@ -16,6 +16,22 @@ import (
 	"github.com/coggsfl/go-openai/jsonschema"
 )
 
+const (
+	xCustomHeader      = "X-CUSTOM-HEADER"
+	xCustomHeaderValue = "test"
+)
+
+var (
+	rateLimitHeaders = map[string]any{
+		"x-ratelimit-limit-requests":     60,
+		"x-ratelimit-limit-tokens":       150000,
+		"x-ratelimit-remaining-requests": 59,
+		"x-ratelimit-remaining-tokens":   149984,
+		"x-ratelimit-reset-requests":     "1s",
+		"x-ratelimit-reset-tokens":       "6m0s",
+	}
+)
+
 func TestChatCompletionsWrongModel(t *testing.T) {
 	config := DefaultConfig("whatever")
 	config.BaseURL = "http://localhost/v1"
@@ -66,6 +82,64 @@ func TestChatCompletions(t *testing.T) {
 		},
 	})
 	checks.NoError(t, err, "CreateChatCompletion error")
+}
+
+// TestCompletions Tests the completions endpoint of the API using the mocked server.
+func TestChatCompletionsWithHeaders(t *testing.T) {
+	client, server, teardown := setupOpenAITestServer()
+	defer teardown()
+	server.RegisterHandler("/v1/chat/completions", handleChatCompletionEndpoint)
+	resp, err := client.CreateChatCompletion(context.Background(), ChatCompletionRequest{
+		MaxTokens: 5,
+		Model:     GPT3Dot5Turbo,
+		Messages: []ChatCompletionMessage{
+			{
+				Role:    ChatMessageRoleUser,
+				Content: "Hello!",
+			},
+		},
+	})
+	checks.NoError(t, err, "CreateChatCompletion error")
+
+	a := resp.Header().Get(xCustomHeader)
+	_ = a
+	if resp.Header().Get(xCustomHeader) != xCustomHeaderValue {
+		t.Errorf("expected header %s to be %s", xCustomHeader, xCustomHeaderValue)
+	}
+}
+
+// TestChatCompletionsWithRateLimitHeaders Tests the completions endpoint of the API using the mocked server.
+func TestChatCompletionsWithRateLimitHeaders(t *testing.T) {
+	client, server, teardown := setupOpenAITestServer()
+	defer teardown()
+	server.RegisterHandler("/v1/chat/completions", handleChatCompletionEndpoint)
+	resp, err := client.CreateChatCompletion(context.Background(), ChatCompletionRequest{
+		MaxTokens: 5,
+		Model:     GPT3Dot5Turbo,
+		Messages: []ChatCompletionMessage{
+			{
+				Role:    ChatMessageRoleUser,
+				Content: "Hello!",
+			},
+		},
+	})
+	checks.NoError(t, err, "CreateChatCompletion error")
+
+	headers := resp.GetRateLimitHeaders()
+	resetRequests := headers.ResetRequests.String()
+	if resetRequests != rateLimitHeaders["x-ratelimit-reset-requests"] {
+		t.Errorf("expected resetRequests %s to be %s", resetRequests, rateLimitHeaders["x-ratelimit-reset-requests"])
+	}
+	resetRequestsTime := headers.ResetRequests.Time()
+	if resetRequestsTime.Before(time.Now()) {
+		t.Errorf("unexpected reset requetsts: %v", resetRequestsTime)
+	}
+
+	bs1, _ := json.Marshal(headers)
+	bs2, _ := json.Marshal(rateLimitHeaders)
+	if string(bs1) != string(bs2) {
+		t.Errorf("expected rate limit header %s to be %s", bs2, bs1)
+	}
 }
 
 // TestChatCompletionsFunctions tests including a function call.
@@ -281,6 +355,15 @@ func handleChatCompletionEndpoint(w http.ResponseWriter, r *http.Request) {
 		TotalTokens:      inputTokens + completionTokens,
 	}
 	resBytes, _ = json.Marshal(res)
+	w.Header().Set(xCustomHeader, xCustomHeaderValue)
+	for k, v := range rateLimitHeaders {
+		switch val := v.(type) {
+		case int:
+			w.Header().Set(k, strconv.Itoa(val))
+		default:
+			w.Header().Set(k, fmt.Sprintf("%s", v))
+		}
+	}
 	fmt.Fprintln(w, string(resBytes))
 }
 
@@ -297,4 +380,35 @@ func getChatCompletionBody(r *http.Request) (ChatCompletionRequest, error) {
 		return ChatCompletionRequest{}, err
 	}
 	return completion, nil
+}
+
+func TestFinishReason(t *testing.T) {
+	c := &ChatCompletionChoice{
+		FinishReason: FinishReasonNull,
+	}
+	resBytes, _ := json.Marshal(c)
+	if !strings.Contains(string(resBytes), `"finish_reason":null`) {
+		t.Error("null should not be quoted")
+	}
+
+	c.FinishReason = ""
+
+	resBytes, _ = json.Marshal(c)
+	if !strings.Contains(string(resBytes), `"finish_reason":null`) {
+		t.Error("null should not be quoted")
+	}
+
+	otherReasons := []FinishReason{
+		FinishReasonStop,
+		FinishReasonLength,
+		FinishReasonFunctionCall,
+		FinishReasonContentFilter,
+	}
+	for _, r := range otherReasons {
+		c.FinishReason = r
+		resBytes, _ = json.Marshal(c)
+		if !strings.Contains(string(resBytes), fmt.Sprintf(`"finish_reason":"%s"`, r)) {
+			t.Errorf("%s should be quoted", r)
+		}
+	}
 }
