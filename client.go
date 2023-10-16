@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
@@ -33,15 +32,35 @@ type Client struct {
 type CBData []struct {
 	URL string `json:"url"`
 }
+
 type CBResult struct {
 	Data CBData `json:"data"`
 }
+
 type CallBackResponse struct {
 	Created int64    `json:"created"`
 	Expires int64    `json:"expires"`
 	ID      string   `json:"id"`
 	Result  CBResult `json:"result"`
 	Status  string   `json:"status"`
+}
+
+type Response interface {
+	SetHeader(http.Header)
+}
+
+type httpHeader http.Header
+
+func (h *httpHeader) SetHeader(header http.Header) {
+	*h = httpHeader(header)
+}
+
+func (h *httpHeader) Header() http.Header {
+	return http.Header(*h)
+}
+
+func (h *httpHeader) GetRateLimitHeaders() RateLimitHeaders {
+	return newRateLimitHeaders(h.Header())
 }
 
 // NewClient creates new OpenAI API client.
@@ -106,7 +125,7 @@ func (c *Client) newRequest(ctx context.Context, method, url string, setters ...
 	return req, nil
 }
 
-func (c *Client) sendRequest(ctx context.Context, req *http.Request, v any) error {
+func (c *Client) sendRequest(req *http.Request, v Response) error {
 	req.Header.Set("Accept", "application/json; charset=utf-8")
 
 	// Check whether Content-Type is already set, Upload Files API requires
@@ -130,12 +149,15 @@ func (c *Client) sendRequest(ctx context.Context, req *http.Request, v any) erro
 	if c.config.APIType == APITypeAzure || c.config.APIType == APITypeAzureAD {
 		// Special handling for initial call to Azure DALL-E API.
 		if strings.Contains(req.URL.Path, "openai/images/generations") {
-			return c.requestImage(ctx, res, v)
+			return c.requestImage(res, v)
 		}
 		// Special handling for callBack to Azure DALL-E API.
 		if strings.Contains(req.URL.Path, "openai/operations/images") {
-			return c.imageRequestCallback(ctx, req, v, res)
+			return c.imageRequestCallback(req, v, res)
 		}
+	}
+	if v != nil {
+		v.SetHeader(res.Header)
 	}
 
 	return decodeResponse(res.Body, v)
@@ -173,6 +195,7 @@ func sendRequestStream[T streamable](client *Client, req *http.Request) (*stream
 		response:           resp,
 		errAccumulator:     utils.NewErrorAccumulator(),
 		unmarshaler:        &utils.JSONUnmarshaler{},
+		httpHeader:         httpHeader(resp.Header),
 	}, nil
 }
 
@@ -194,8 +217,8 @@ func isFailureStatusCode(resp *http.Response) bool {
 	return resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest
 }
 
-func (c *Client) requestImage(ctx context.Context, res *http.Response, v any) error {
-	_, err := io.Copy(ioutil.Discard, res.Body)
+func (c *Client) requestImage(res *http.Response, v Response) error {
+	_, err := io.Copy(io.Discard, res.Body)
 	if err != nil {
 		return err
 	}
@@ -203,16 +226,16 @@ func (c *Client) requestImage(ctx context.Context, res *http.Response, v any) er
 	if callBackURL == "" {
 		return ErrClientEmptyCallbackURL
 	}
-	newReq, err := c.newRequest(ctx, http.MethodGet, callBackURL)
+	newReq, err := c.newRequest(context.Background(), http.MethodGet, callBackURL)
 	if err != nil {
 		return err
 	}
 
-	return c.sendRequest(ctx, newReq, v)
+	return c.sendRequest(newReq, v)
 }
 
 // Handle image callback response from Azure DALL-E API.
-func (c *Client) imageRequestCallback(ctx context.Context, req *http.Request, v any, res *http.Response) error {
+func (c *Client) imageRequestCallback(req *http.Request, v Response, res *http.Response) error {
 	// Retry Sleep seconds for Azure DALL-E 2 callback URL.
 	var callBackWaitTime = 3
 
@@ -228,7 +251,7 @@ func (c *Client) imageRequestCallback(ctx context.Context, req *http.Request, v 
 	if result.Status != "succeeded" {
 		time.Sleep(time.Duration(callBackWaitTime) * time.Second)
 		req.Header.Add("Retry", "true")
-		return c.sendRequest(ctx, req, v)
+		return c.sendRequest(req, v)
 	}
 
 	// Convert the callBack response to the OpenAI ImageResponse

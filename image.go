@@ -27,12 +27,16 @@ type ImageRequest struct {
 	Size           string `json:"size,omitempty"`
 	ResponseFormat string `json:"response_format,omitempty"`
 	User           string `json:"user,omitempty"`
+
+	httpHeader
 }
 
 // ImageResponse represents a response structure for image API.
 type ImageResponse struct {
 	Created int64                    `json:"created,omitempty"`
 	Data    []ImageResponseDataInner `json:"data,omitempty"`
+
+	httpHeader
 }
 
 // ImageResponseDataInner represents a response data structure for image API.
@@ -49,7 +53,7 @@ func (c *Client) CreateImage(ctx context.Context, request ImageRequest) (respons
 		return
 	}
 
-	err = c.sendRequest(ctx, req, &response)
+	err = c.sendRequest(req, &response)
 	return
 }
 
@@ -113,7 +117,7 @@ func (c *Client) CreateEditImage(ctx context.Context, request ImageEditRequest) 
 		return
 	}
 
-	err = c.sendRequest(ctx, req, &response)
+	err = c.sendRequest(req, &response)
 	return
 }
 
@@ -163,6 +167,6 @@ func (c *Client) CreateVariImage(ctx context.Context, request ImageVariRequest) 
 		return
 	}
 
-	err = c.sendRequest(ctx, req, &response)
+	err = c.sendRequest(req, &response)
 	return
 }
