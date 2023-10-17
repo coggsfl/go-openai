@@ -228,6 +228,18 @@ func TestClientReturnsRequestBuilderErrors(t *testing.T) {
 		{"ListFineTuneEvents", func() (any, error) {
 			return client.ListFineTuneEvents(ctx, "")
 		}},
+		{"CreateFineTuningJob", func() (any, error) {
+			return client.CreateFineTuningJob(ctx, FineTuningJobRequest{})
+		}},
+		{"CancelFineTuningJob", func() (any, error) {
+			return client.CancelFineTuningJob(ctx, "")
+		}},
+		{"RetrieveFineTuningJob", func() (any, error) {
+			return client.RetrieveFineTuningJob(ctx, "")
+		}},
+		{"ListFineTuningJobEvents", func() (any, error) {
+			return client.ListFineTuningJobEvents(ctx, "")
+		}},
 		{"Moderations", func() (any, error) {
 			return client.Moderations(ctx, ModerationRequest{})
 		}},
@@ -263,6 +275,9 @@ func TestClientReturnsRequestBuilderErrors(t *testing.T) {
 		}},
 		{"GetModel", func() (any, error) {
 			return client.GetModel(ctx, "text-davinci-003")
+		}},
+		{"DeleteFineTuneModel", func() (any, error) {
+			return client.DeleteFineTuneModel(ctx, "")
 		}},
 	}
 
@@ -305,8 +320,7 @@ func TestRequestImageErrors(t *testing.T) {
 		Body:       ioutil.NopCloser(bytes.NewBufferString("")),
 	}
 	v := &ImageRequest{}
-	ctx := context.Background()
-	err = client.requestImage(ctx, res, v)
+	err = client.requestImage(res, v)
 
 	if !errors.Is(err, ErrClientEmptyCallbackURL) {
 		t.Fatalf("%s did not return error. requestImage failed: %v", testCase, err)
@@ -317,9 +331,9 @@ func TestRequestImageErrors(t *testing.T) {
 	res = &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Operation-Location": []string{"hxxp://localhost:8080/openai/operations/images/request-id"}},
-		Body:       ioutil.NopCloser(bytes.NewBufferString("")),
+		Body:       io.NopCloser(bytes.NewBufferString("")),
 	}
-	err = client.requestImage(ctx, res, v)
+	err = client.requestImage(res, v)
 	if err == nil {
 		t.Fatalf("%s did not return error. requestImage failed: %v", testCase, err)
 	}
@@ -361,7 +375,7 @@ func TestImageRequestCallbackErrors(t *testing.T) {
 		Body:       ioutil.NopCloser(bytes.NewBufferString(cbResponseBytes.String())),
 	}
 	v := &ImageRequest{}
-	err = client.imageRequestCallback(ctx, req, v, res)
+	err = client.imageRequestCallback(req, v, res)
 
 	if !errors.Is(err, ErrClientRetievingCallbackResponse) {
 		t.Fatalf("%s did not return error. imageRequestCallback failed: %v", testCase, err)

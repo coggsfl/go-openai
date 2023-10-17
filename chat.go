@@ -114,6 +114,13 @@ const (
 	FinishReasonNull          FinishReason = "null"
 )
 
+func (r FinishReason) MarshalJSON() ([]byte, error) {
+	if r == FinishReasonNull || r == "" {
+		return []byte("null"), nil
+	}
+	return []byte(`"` + string(r) + `"`), nil // best effort to not break future API changes
+}
+
 type ChatCompletionChoice struct {
 	Index   int                   `json:"index"`
 	Message ChatCompletionMessage `json:"message"`
@@ -135,6 +142,8 @@ type ChatCompletionResponse struct {
 	Model   string                 `json:"model"`
 	Choices []ChatCompletionChoice `json:"choices"`
 	Usage   Usage                  `json:"usage"`
+
+	httpHeader
 }
 
 // CreateChatCompletion — API call to Create a completion for the chat message.
@@ -158,6 +167,6 @@ func (c *Client) CreateChatCompletion(
 		return
 	}
 
-	err = c.sendRequest(ctx, req, &response)
+	err = c.sendRequest(req, &response)
 	return
 }

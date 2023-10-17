@@ -28,6 +28,8 @@ type EditsResponse struct {
 	Created int64         `json:"created"`
 	Usage   Usage         `json:"usage"`
 	Choices []EditsChoice `json:"choices"`
+
+	httpHeader
 }
 
 // Edits Perform an API call to the Edits endpoint.
@@ -41,6 +43,6 @@ func (c *Client) Edits(ctx context.Context, request EditsRequest) (response Edit
 		return
 	}
 
-	err = c.sendRequest(ctx, req, &response)
+	err = c.sendRequest(req, &response)
 	return
 }
